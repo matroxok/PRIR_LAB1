@@ -6,11 +6,41 @@ using System.Threading.Tasks;
 int zloze = 2000;
 int magazyn = 0;
 int liczbaGornikow = 5;
+string[] statusy = new string[liczbaGornikow];
+bool odswiezac = true;
 
 object blokada = new object();
 
 SemaphoreSlim kopalnia = NewMethod();
 SemaphoreSlim sklad = new SemaphoreSlim(1);
+
+void Status(int numer, string tekst)
+{
+    lock (blokada)
+    {
+        statusy[numer - 1] = tekst;
+    }
+}
+
+void Ekran()
+{
+    lock (blokada)
+    {
+        Console.SetCursorPosition(0, 0);
+
+        Console.WriteLine($"Zloze: {zloze}".PadRight(50));
+        Console.WriteLine($"Magazyn: {magazyn}".PadRight(50));
+        Console.WriteLine();
+
+        for (int i = 0; i < statusy.Length; i++)
+        {
+            Console.WriteLine(
+                $"Gornik {i + 1}: {statusy[i]}".PadRight(50)
+            );
+        }
+    }
+}
+
 
 void Gornik(int numer)
 {
@@ -18,7 +48,11 @@ void Gornik(int numer)
     {
         int ladunek = 0;
 
+        Status(numer, "Czeka na kopalnie");
+
         kopalnia.Wait();
+
+        Status(numer, "Wydobywa wegiel");
 
         for (int i = 0; i < 200; i++)
         {
@@ -37,12 +71,15 @@ void Gornik(int numer)
 
         if (ladunek == 0) break;
 
-        Console.WriteLine($"Gornik {numer} wydobyl {ladunek}");
+        Status(numer, "Transportuje wegiel");
 
-        // Transport do magazynu
         Thread.Sleep(10000);
 
+        Status(numer, "Czeka na magazyn");
+
         sklad.Wait();
+
+        Status(numer, "Rozladowuje wegiel");
 
         for (int i = 0; i < ladunek; i++)
         {
@@ -50,22 +87,38 @@ void Gornik(int numer)
 
             lock (blokada)
                 magazyn++;
-                
         }
 
         sklad.Release();
-
-        Console.WriteLine($"Gornik {numer} rozladowal wegiel");
 
         lock (blokada)
         {
             if (zloze == 0) break;
         }
 
-        // Powrot do kopalni
+        Status(numer, "Wraca do kopalni");
+
         Thread.Sleep(10000);
     }
+
+    Status(numer, "Zakonczyl prace");
 }
+
+Console.Clear();
+
+Task monitor = Task.Run(() =>
+{
+    while (true)
+    {
+        lock (blokada)
+        {
+            if (!odswiezac) break;
+        }
+
+        Ekran();
+        Thread.Sleep(200);
+    }
+});
 
 Task[] zadania = new Task[liczbaGornikow];
 
@@ -76,6 +129,11 @@ for (int i = 0; i < liczbaGornikow; i++)
 }
 
 Task.WaitAll(zadania);
+lock (blokada)
+    odswiezac = false;
+
+monitor.Wait();
+Ekran();
 
 Console.WriteLine($"Pozostalo w zlozu: {zloze}");
 Console.WriteLine($"W magazynie: {magazyn}");
